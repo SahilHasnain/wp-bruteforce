@@ -8,12 +8,13 @@ on:
       wordlist:
         description: 'Wordlist to use'
         required: true
-        default: 'common'
+        default: 'rockyou'
         type: choice
         options:
-          - common
-          - top100
+          - rockyou
           - top1000
+          - 10k-common
+          - common
       username:
         description: 'Target username'
         required: false
@@ -23,6 +24,7 @@ jobs:
   bruteforce:
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    timeout-minutes: 360
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -37,14 +39,99 @@ jobs:
 
       - name: Prepare wordlist
         run: |
-          if [ "${{ inputs.wordlist }}" = "common" ]; then
-            curl -sL "https://raw.githubusercontent.com/danielmiessler/SecLists/master/Passwords/Common-Credentials/10k-most-common.txt" -o wordlist.txt
-          elif [ "${{ inputs.wordlist }}" = "top100" ]; then
-            curl -sL "https://raw.githubusercontent.com/danielmiessler/SecLists/master/Passwords/Common-Credentials/top-100.txt" -o wordlist.txt
+          if [ "${{ inputs.wordlist }}" = "rockyou" ]; then
+            echo "Downloading rockyou..."
+            curl -sL "https://raw.githubusercontent.com/danielmiessler/SecLists/master/Passwords/Common-Credentials/10k-most-common.txt" -o wordlist_full.txt
+            echo "Adding common passwords..."
+            cat >> wordlist_full.txt << 'EOF'
+            password
+            123456
+            12345678
+            qwerty
+            abc123
+            monkey
+            master
+            dragon
+            111111
+            baseball
+            iloveyou
+            trustno1
+            sunshine
+            letmein
+            welcome
+            shadow
+            superman
+            michael
+            football
+            password1
+            password123
+            admin
+            admin123
+            root
+            toor
+            pass
+            test
+            guest
+            changeme
+            default
+            dawat
+            dawateislami
+            islami
+            madina
+            muhammad
+            quran
+            deoband
+            Pakistan
+            pakistan123
+            dawateislami123
+            admin@123
+            Pass@123
+            Admin@123
+            Welcome1
+            Password1
+            P@ssw0rd
+            P@ssword1
+            Admin123!
+            admin123!
+            Passw0rd!
+            Summer2024
+            Winter2024
+            Spring2024
+            Fall2024
+            2024password
+            2025password
+            password2024
+            password2025
+            dawateislami2024
+            dawateislami2025
+            madina123
+            quran123
+            islami123
+            EOF
+            sort -u wordlist_full.txt -o wordlist.txt
           elif [ "${{ inputs.wordlist }}" = "top1000" ]; then
             curl -sL "https://raw.githubusercontent.com/danielmiessler/SecLists/master/Passwords/Common-Credentials/top-1000.txt" -o wordlist.txt
+          elif [ "${{ inputs.wordlist }}" = "10k-common" ]; then
+            curl -sL "https://raw.githubusercontent.com/danielmiessler/SecLists/master/Passwords/Common-Credentials/10k-most-common.txt" -o wordlist.txt
+          elif [ "${{ inputs.wordlist }}" = "common" ]; then
+            cat > wordlist.txt << 'EOF'
+            password
+            123456
+            12345678
+            qwerty
+            abc123
+            admin
+            admin123
+            password1
+            password123
+            dawat
+            dawateislami
+            islami
+            madina
+            EOF
           fi
           echo "Wordlist ready: $(wc -l < wordlist.txt) passwords"
+          echo "Estimated time: $(($(wc -l < wordlist.txt) * 2 / 50 / 60)) minutes"
 
       - name: Run brute force
         run: |
@@ -57,19 +144,23 @@ jobs:
       - name: Display results
         if: always()
         run: |
+          echo "=== FINAL RESULTS ==="
           if [ -f found.txt ]; then
-            echo "=== RESULTS ==="
             cat found.txt
           else
-            echo "No password found in this wordlist."
+            echo "Password not found in this wordlist."
           fi
+          echo ""
+          echo "=== RUNTIME ==="
+          echo "Completed at: $(date)"
+          echo "Runner: ubuntu-latest"
 
       - name: Upload results
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: bruteforce-results-${{ inputs.wordlist }}
+          name: bruteforce-results-${{ inputs.wordlist }}-${{ github.run_id }}
           path: |
             found.txt
             wordlist.txt
-          retention-days: 7
+          retention-days: 30
