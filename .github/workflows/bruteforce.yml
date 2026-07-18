@@ -1,4 +1,4 @@
-name: WordPress Brute Force
+name: WP XMLRPC Attack
 
 on:
   push:
