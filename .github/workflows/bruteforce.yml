@@ -1,6 +1,8 @@
 name: WordPress Brute Force
 
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
     inputs:
       wordlist:
@@ -19,6 +21,7 @@ on:
 
 jobs:
   bruteforce:
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
