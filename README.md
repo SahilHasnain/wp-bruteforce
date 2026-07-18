@@ -31,3 +31,4 @@ Go to Actions > WordPress Brute Force > Run workflow, select wordlist size.
 - No rate limiting
 - 50 attempts per request = 75+ attempts/second
 - Bypasses most IP-based rate limiters
+
