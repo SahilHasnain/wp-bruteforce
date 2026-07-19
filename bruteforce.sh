@@ -62,7 +62,7 @@ log "Batch size: $BATCH_SIZE"
 TOTAL=0
 FOUND=0
 
-for wordlist in targeted.txt rockyou_filtered.txt; do
+for wordlist in wordlist.txt targeted.txt; do
     if [ ! -f "$wordlist" ]; then
         log "Skipping $wordlist (not found)"
         continue
