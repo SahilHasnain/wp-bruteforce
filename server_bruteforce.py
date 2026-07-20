@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """Spring Boot Admin Brute Force — concurrent, fast."""
+import utils.transport
+import utils.session
 import sys, time, concurrent.futures, subprocess, urllib.parse
 
 TARGET = "https://server.dawateislami.net/commonadmin/login"
